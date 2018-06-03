@@ -3,7 +3,7 @@ import tweepy
 import json
 import logging
 import sys
-
+import argparse
 from kafka import KafkaProducer
 
 
@@ -29,7 +29,28 @@ class StreamListener(tweepy.StreamListener):
         self.kafka_topic = kwargs.get('kafka_topic')
 
     def on_status(self, status):
-        msg = json.dumps(status._json)
+        min_msg = {
+            'text': status.text,
+            'created': str(status.created_at),
+            'retweeted_status': status.retweet_count,
+            'is_quote_status': status.is_quote_status,
+            'quote_count': status.quote_count,
+            'reply_count': status.reply_count,
+            'retweet_count': status.retweet_count,
+            'favorite_count': status.favorite_count,
+            'entities': status.entities,
+            'favorited': status.favorited,
+            'retweeted': status.retweeted,
+            'filter_level': status.filter_level,
+            'lang': status.lang,
+            'timestamp_ms': status.timestamp_ms,
+            'user': {
+                'id': status.user.id,
+                'name': status.user.name,
+                'screen_name': status.user.screen_name
+            }
+        }
+        msg = json.dumps(min_msg)
         self.kafka_producer.send_message(self.kafka_topic, msg)
         #logging.info(msg)
 
@@ -39,13 +60,17 @@ class StreamListener(tweepy.StreamListener):
             #returning False in on_data disconnects the stream
             return False
 
-
-if __name__ == '__main__':
+def main(kafka_topic, track_items=[settings.TRACK_TERMS], kafka_host="localhost", kafka_port=9092):
     auth = tweepy.OAuthHandler(settings.TWITTER_APP_KEY, settings.TWITTER_APP_SECRET)
     auth.set_access_token(settings.ACCESS_TOKEN, settings.ACCESS_SECRET)
     api = tweepy.API(auth)
     kafka_sender = KafkaSender()
-    kafka_topic = 'twitterApp'
     stream_listener = StreamListener(kafka=kafka_sender, kafka_topic=kafka_topic)
     stream = tweepy.Stream(auth=api.auth, listener=stream_listener)
-    stream.filter(track=[settings.TRACK_TERMS])
+    stream.filter(track=track_items)
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("topic", help="Kafka topic output stream")
+    args = parser.parse_args()
+    main(args.topic)
