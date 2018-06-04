@@ -61,14 +61,16 @@ class StreamListener(tweepy.StreamListener):
             #returning False in on_data disconnects the stream
             return False
 
-def main(kafka_topic, twitter_conf, track_items=[], kafka_host="localhost", kafka_port=9092):
-    auth = tweepy.OAuthHandler(twitter_conf['app_key'], twitter_conf['app_secret'])
-    auth.set_access_token(twitter_conf['access_token'], twitter_conf['access_secret'])
+
+def main(topic, host, port, app_key, app_secret, access_token, access_secret, track_items=[]):
+    auth = tweepy.OAuthHandler(app_key, app_secret)
+    auth.set_access_token(access_token, access_secret)
     api = tweepy.API(auth)
-    kafka_sender = KafkaSender()
-    stream_listener = StreamListener(kafka=kafka_sender, kafka_topic=kafka_topic)
+    kafka_sender = KafkaSender(host=host, port=port)
+    stream_listener = StreamListener(kafka=kafka_sender, kafka_topic=topic)
     stream = tweepy.Stream(auth=api.auth, listener=stream_listener)
     stream.filter(track=track_items)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -76,4 +78,15 @@ if __name__ == '__main__':
     parser.add_argument("-t", "--topic", help="Kafka topic output stream", required=True)
     parser.add_argument("-i", "--track_items", action='append', help="List track twitter items", required=True)
     args = parser.parse_args()
-    main(args.topic, configs['TwitterAPI'], track_items=args.track_items)
+    twitter_conf = configs['TwitterAPI']
+    kafka_conf = configs['Kafka']
+    main(
+        args.topic,
+        kafka_conf['host'],
+        int(kafka_conf['port']),
+        twitter_conf['app_key'],
+        twitter_conf['app_secret'],
+        twitter_conf['access_token'],
+        twitter_conf['access_secret'],
+        track_items=args.track_items
+    )
