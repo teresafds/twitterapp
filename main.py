@@ -8,7 +8,8 @@ from kafka import KafkaProducer
 
 from config import read_config
 
-logging.basicConfig(stream=sys.stdout, level=logging.INFO)
+logger = logging.getLogger('twitterapp')
+logger.setLevel(logging.INFO)
 
 class KafkaSender(object):
 
@@ -30,30 +31,20 @@ class StreamListener(tweepy.StreamListener):
         self.kafka_topic = kwargs.get('kafka_topic')
 
     def on_status(self, status):
-        min_msg = {
-            'text': status.text,
-            'created': str(status.created_at),
-            'retweeted_status': status.retweet_count,
-            'is_quote_status': status.is_quote_status,
-            'quote_count': status.quote_count,
-            'reply_count': status.reply_count,
-            'retweet_count': status.retweet_count,
-            'favorite_count': status.favorite_count,
-            'entities': status.entities,
-            'favorited': status.favorited,
-            'retweeted': status.retweeted,
-            'filter_level': status.filter_level,
-            'lang': status.lang,
-            'timestamp_ms': status.timestamp_ms,
-            'user': {
-                'id': status.user.id,
-                'name': status.user.name,
-                'screen_name': status.user.screen_name
-            }
+        fields = ['text', 'created_at', 'is_quote_status', 'quote_count',
+         'reply_count', 'retweet_count', 'favorite_count', 'entities', 'favorited',
+         'retweeted', 'filter_level', 'lang', 'timestamp_ms', 'user']
+        map_fields = {
+            'created_at': lambda x: str(x),
+            'user': lambda x: {'id': x.id, 'name': x.name, 'screen_name': x.screen_name}
         }
+        min_msg = { f: getattr(status, f) for f in fields}
+        for m, f in map_fields.items():
+            if min_msg.get(m):
+                min_msg[m] = f(min_msg[m])
         msg = json.dumps(min_msg)
         self.kafka_producer.send_message(self.kafka_topic, msg)
-        #logging.info(msg)
+        #logger.info(msg)
 
 
     def on_error(self, status_code):
