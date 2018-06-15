@@ -9,8 +9,7 @@ def main(topic_name):
     sc.setLogLevel("WARN")
 
     ssc = StreamingContext(sc, 10)
-
-    kafkaStream = KafkaUtils.createStream(ssc, 'localhost:2181', 'spark-streaming', {'twitterApp':1})
+    kafkaStream = KafkaUtils.createStream(ssc, 'localhost:2181', 'spark-streaming', {topic_name:1})
 
     parsed = kafkaStream.map(lambda v: json.loads(v[1]))
 
