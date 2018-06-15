@@ -2,6 +2,7 @@ from pyspark import SparkContext
 from pyspark.streaming import StreamingContext
 from pyspark.streaming.kafka import KafkaUtils
 import json
+import argparse
 
 def main(topic_name):
     sc = SparkContext(appName="PythonSparkStreamingKafka_RM_01")
@@ -19,4 +20,8 @@ def main(topic_name):
     ssc.awaitTermination()
 
 
-main('twitterApp')
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-t", "--topic", help="Kafka topic output stream", required=True)
+    args = parser.parse_args()
+    main(args.topic)
