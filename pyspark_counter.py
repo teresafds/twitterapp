@@ -4,17 +4,17 @@ from pyspark.streaming.kafka import KafkaUtils
 import json
 import argparse
 
-def main(topic_name):
+def main(topic_name, slide_interval=30, micro_secs_batch=10):
     sc = SparkContext(appName="PythonSparkStreamingKafka_RM_01")
     sc.setLogLevel("WARN")
 
-    ssc = StreamingContext(sc, 10)
+    ssc = StreamingContext(sc, micro_secs_batch)
+    ssc.checkpoint("/tmp/spark_twitter")
     kafkaStream = KafkaUtils.createStream(ssc, 'localhost:2181', 'spark-streaming', {topic_name:1})
 
     parsed = kafkaStream.map(lambda v: json.loads(v[1]))
 
-    parsed.count().map(lambda x:'Tweets in this batch: %s' % x).pprint()
-
+    parsed.countByWindow(micro_secs_batch, slide_interval).map(lambda x:'Tweets in this batch: %s' % x).pprint()
     ssc.start()
     ssc.awaitTermination()
 
