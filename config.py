@@ -1,4 +1,7 @@
-from configparser import ConfigParser
+try:
+    from configparser import ConfigParser
+except ImportError:
+    from ConfigParser import ConfigParser
 import io
 
 def read_config(file):
