@@ -1,18 +1,32 @@
-from pyspark import SparkContext
-from pyspark.streaming import StreamingContext
-from pyspark.streaming.kafka import KafkaUtils
 import json
 import argparse
 import requests
 
+from pyspark import SparkContext
+from pyspark.streaming import StreamingContext
+from pyspark.sql import Row, SparkSession
+from pyspark.streaming.kafka import KafkaUtils
 
-def enrich_twitter_mc(mc_key, twitter):
+
+def getSparkSessionInstance(sparkConf):
+    """
+    Singleton Instance of sparksession, in order to use the same one and another time.
+    """
+    if ('sparkSessionSingletonInstance' not in globals()):
+        globals()['sparkSessionSingletonInstance'] = SparkSession\
+            .builder\
+            .config(conf=sparkConf)\
+            .getOrCreate()
+    return globals()['sparkSessionSingletonInstance']
+
+
+
+def get_sent_analysis(mc_key, twitter):
     url_mc = "http://api.meaningcloud.com/sentiment-2.1?"
     payload = "key=%s&lang=%s&of=json&txt=%s" % (mc_key, twitter['lang'], twitter['text'])
     response = requests.request("POST", url_mc+payload)
     sentimental_analysis = json.loads(response.content.decode('utf-8'))
     return json.dumps({
-        'twitter': twitter,
         'sentimental_analysis': {
             'score_tag': sentimental_analysis.get('score_tag'),
             'agreement': sentimental_analysis.get('agreement'),
@@ -38,12 +52,32 @@ def main(
     ssc.checkpoint(checkpoint_file)
     kafkaStream = KafkaUtils.createStream(ssc, "{zk_host}:{zk_port}".format(zk_host=zk_host, zk_port=zk_port), 'spark-streaming', {input_topic_name:1})
 
-    parsed = kafkaStream.map(lambda v: json.loads(v[1]))
-    enriched_tweets = parsed.map(lambda v: enrich_twitter_mc(mc_key, v))
-    if output_file:
-        (enriched_tweets).saveAsTextFiles(output_file)
-    else:
-        (enriched_tweets).pprint()
+    tweets = kafkaStream.map(lambda v: json.loads(v[1]))
+
+    # Convert RDDs of the words DStream to DataFrame and run SQL query
+    def process(time, rdd):
+        print("========= %s =========" % str(time))
+        try:
+            # Get the singleton instance of SparkSession
+            spark = getSparkSessionInstance(rdd.context.getConf())
+
+            # Convert RDD[String] to RDD[Row] to DataFrame
+            rowRdd = rdd.map(lambda tweet: Row(**tweet))
+
+            tweetsDataFrame = spark.createDataFrame(rowRdd)
+
+            # Creates a temporary view using the DataFrame.
+            tweetsDataFrame.createOrReplaceTempView("tweets")
+
+            # Do word count on table using SQL and print it
+            tweetsCountsDataFrame = \
+                spark.sql("select count(*) from tweets")
+            tweetsCountsDataFrame.show()
+
+            tweetsDataFrame.printSchema()
+        except:
+            pass
+    tweets.foreachRDD(process)
     ssc.start()
     ssc.awaitTermination()
 
