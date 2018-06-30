@@ -6,6 +6,7 @@ from pyspark import SparkContext
 from pyspark.streaming import StreamingContext
 from pyspark.sql import Row, SparkSession
 from pyspark.streaming.kafka import KafkaUtils
+from pyspark.sql.types import StringType
 
 
 def getSparkSessionInstance(sparkConf):
@@ -21,12 +22,22 @@ def getSparkSessionInstance(sparkConf):
 
 
 
-def get_sent_analysis(mc_key, twitter):
-    url_mc = "http://api.meaningcloud.com/sentiment-2.1?"
+def get_sent_analysis(twitter):
+    url_mc = 'http://api.meaningcloud.com/sentiment-2.1?'
+    mc_key = ''
     payload = "key=%s&lang=%s&of=json&txt=%s" % (mc_key, twitter['lang'], twitter['text'])
-    response = requests.request("POST", url_mc+payload)
-    sentimental_analysis = json.loads(response.content.decode('utf-8'))
+    #response = requests.request("POST", url_mc+payload)
+    #sentimental_analysis = json.loads(response.content.decode('utf-8'))
     return json.dumps({
+        'sentimental_analysis': {
+            'score_tag': 10,
+            'agreement': 'P+',
+            'subjectivity': 'OBJECTIVE',
+            'confidence': 100,
+            'irony': 'NON-IRONY'
+        }
+    })
+    """return json.dumps({
         'sentimental_analysis': {
             'score_tag': sentimental_analysis.get('score_tag'),
             'agreement': sentimental_analysis.get('agreement'),
@@ -34,7 +45,7 @@ def get_sent_analysis(mc_key, twitter):
             'confidence': sentimental_analysis.get('confidence'),
             'irony': sentimental_analysis.get('irony')
         }
-    })
+    })"""
 
 
 def main(
@@ -49,6 +60,8 @@ def main(
     sc = SparkContext(appName="StreamingSentimentAnalysis")
     sc.setLogLevel("WARN")
     ssc = StreamingContext(sc, micro_secs_batch)
+    spark_session = getSparkSessionInstance(sc.getConf())
+    spark_session.udf.register('sentiment_analysis', get_sent_analysis)
     ssc.checkpoint(checkpoint_file)
     kafkaStream = KafkaUtils.createStream(ssc, "{zk_host}:{zk_port}".format(zk_host=zk_host, zk_port=zk_port), 'spark-streaming', {input_topic_name:1})
 
@@ -63,7 +76,7 @@ def main(
 
             # Convert RDD[String] to RDD[Row] to DataFrame
             rowRdd = rdd.map(lambda tweet: Row(**tweet))
-
+            #spark.udf.register('sentiment_analysis', get_sent_analysis, StringType)
             tweetsDataFrame = spark.createDataFrame(rowRdd)
 
             # Creates a temporary view using the DataFrame.
@@ -71,10 +84,8 @@ def main(
 
             # Do word count on table using SQL and print it
             tweetsCountsDataFrame = \
-                spark.sql("select count(*) from tweets")
+                spark.sql("select sentiment_analysis(text) from tweets limit 10")
             tweetsCountsDataFrame.show()
-
-            tweetsDataFrame.printSchema()
         except:
             pass
     tweets.foreachRDD(process)
