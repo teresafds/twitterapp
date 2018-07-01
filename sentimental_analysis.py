@@ -71,9 +71,25 @@ def main(
             tweetsDataFrame.createOrReplaceTempView("tweets")
             # Do word count on table using SQL and print it
             tweetsCountsDataFrame = \
-                spark.sql("select lang, sentiment_analysis(text, lang) from tweets limit 10")
+                spark.sql("""
+                    SELECT
+                        current_timestamp(),
+                        created_at AS created,
+                        favorite_count,
+                        favorited,
+                        is_quote_status,
+                        lang,
+                        quote_count,
+                        reply_count,
+                        retweet_count,
+                        retweeted,
+                        user,
+                        sentiment_analysis(text, lang) AS sentimental_analysis
+                    FROM tweets
+                    LIMIT 10
+                """)
             tweetsCountsDataFrame.show()
-            tweetsDataFrame.printSchema()
+            #tweetsDataFrame.printSchema()
         except Exception as e:
             print(e.message)
             pass
