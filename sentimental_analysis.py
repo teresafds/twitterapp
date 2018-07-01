@@ -6,7 +6,9 @@ from pyspark import SparkContext
 from pyspark.streaming import StreamingContext
 from pyspark.sql import Row, SparkSession
 from pyspark.streaming.kafka import KafkaUtils
-from pyspark.sql.types import StringType
+
+
+ENABLED_LANGUAGES = ['en', 'es', 'fr', 'it', 'pt', 'ca']
 
 
 def getSparkSessionInstance(sparkConf):
@@ -21,31 +23,21 @@ def getSparkSessionInstance(sparkConf):
     return globals()['sparkSessionSingletonInstance']
 
 
-
-def get_sent_analysis(twitter):
+def get_sent_analysis(text, language):
+    if language not in (ENABLED_LANGUAGES):
+        return json.dumps({})
     url_mc = 'http://api.meaningcloud.com/sentiment-2.1?'
     mc_key = ''
-    payload = "key=%s&lang=%s&of=json&txt=%s" % (mc_key, twitter['lang'], twitter['text'])
-    #response = requests.request("POST", url_mc+payload)
-    #sentimental_analysis = json.loads(response.content.decode('utf-8'))
+    payload = "key=%s&lang=%s&of=json&txt=%s" % (mc_key, language, text)
+    response = requests.request("POST", url_mc+payload)
+    sentimental_analysis = json.loads(response.content.decode('utf-8'))
     return json.dumps({
-        'sentimental_analysis': {
-            'score_tag': 10,
-            'agreement': 'P+',
-            'subjectivity': 'OBJECTIVE',
-            'confidence': 100,
-            'irony': 'NON-IRONY'
-        }
+        'score_tag': sentimental_analysis.get('score_tag'),
+        'agreement': sentimental_analysis.get('agreement'),
+        'subjectivity': sentimental_analysis.get('subjectivity'),
+        'confidence': sentimental_analysis.get('confidence'),
+        'irony': sentimental_analysis.get('irony')
     })
-    """return json.dumps({
-        'sentimental_analysis': {
-            'score_tag': sentimental_analysis.get('score_tag'),
-            'agreement': sentimental_analysis.get('agreement'),
-            'subjectivity': sentimental_analysis.get('subjectivity'),
-            'confidence': sentimental_analysis.get('confidence'),
-            'irony': sentimental_analysis.get('irony')
-        }
-    })"""
 
 
 def main(
@@ -60,33 +52,30 @@ def main(
     sc = SparkContext(appName="StreamingSentimentAnalysis")
     sc.setLogLevel("WARN")
     ssc = StreamingContext(sc, micro_secs_batch)
-    spark_session = getSparkSessionInstance(sc.getConf())
-    spark_session.udf.register('sentiment_analysis', get_sent_analysis)
     ssc.checkpoint(checkpoint_file)
     kafkaStream = KafkaUtils.createStream(ssc, "{zk_host}:{zk_port}".format(zk_host=zk_host, zk_port=zk_port), 'spark-streaming', {input_topic_name:1})
-
     tweets = kafkaStream.map(lambda v: json.loads(v[1]))
 
     # Convert RDDs of the words DStream to DataFrame and run SQL query
     def process(time, rdd):
         print("========= %s =========" % str(time))
+        print(rdd.count())
         try:
             # Get the singleton instance of SparkSession
             spark = getSparkSessionInstance(rdd.context.getConf())
-
             # Convert RDD[String] to RDD[Row] to DataFrame
             rowRdd = rdd.map(lambda tweet: Row(**tweet))
-            #spark.udf.register('sentiment_analysis', get_sent_analysis, StringType)
+            spark.udf.register('sentiment_analysis', get_sent_analysis)
             tweetsDataFrame = spark.createDataFrame(rowRdd)
-
             # Creates a temporary view using the DataFrame.
             tweetsDataFrame.createOrReplaceTempView("tweets")
-
             # Do word count on table using SQL and print it
             tweetsCountsDataFrame = \
-                spark.sql("select sentiment_analysis(text) from tweets limit 10")
+                spark.sql("select lang, sentiment_analysis(text, lang) from tweets limit 10")
             tweetsCountsDataFrame.show()
-        except:
+            tweetsDataFrame.printSchema()
+        except Exception as e:
+            print(e.message)
             pass
     tweets.foreachRDD(process)
     ssc.start()
