@@ -6,7 +6,7 @@ from pyspark import SparkContext
 from pyspark.streaming import StreamingContext
 from pyspark.sql import Row, SparkSession
 from pyspark.streaming.kafka import KafkaUtils
-
+from pyspark.sql.types import MapType, StringType
 
 ENABLED_LANGUAGES = ['en', 'es', 'fr', 'it', 'pt', 'ca']
 
@@ -31,18 +31,17 @@ def get_sent_analysis(text, language):
     payload = "key=%s&lang=%s&of=json&txt=%s" % (mc_key, language, text)
     response = requests.request("POST", url_mc+payload)
     sentimental_analysis = json.loads(response.content.decode('utf-8'))
-    return json.dumps({
+    return {
         'score_tag': sentimental_analysis.get('score_tag'),
         'agreement': sentimental_analysis.get('agreement'),
         'subjectivity': sentimental_analysis.get('subjectivity'),
         'confidence': sentimental_analysis.get('confidence'),
         'irony': sentimental_analysis.get('irony')
-    })
+    }
 
 
 def main(
         input_topic_name,
-        mc_key,
         micro_secs_batch=10,
         output_file=None,
         checkpoint_file='/tmp/sentimental_analysis',
@@ -65,7 +64,7 @@ def main(
             spark = getSparkSessionInstance(rdd.context.getConf())
             # Convert RDD[String] to RDD[Row] to DataFrame
             rowRdd = rdd.map(lambda tweet: Row(**tweet))
-            spark.udf.register('sentiment_analysis', get_sent_analysis)
+            spark.udf.register('sentiment_analysis', get_sent_analysis, MapType(StringType(), StringType()))
             tweetsDataFrame = spark.createDataFrame(rowRdd)
             # Creates a temporary view using the DataFrame.
             tweetsDataFrame.createOrReplaceTempView("tweets")
@@ -99,10 +98,9 @@ def main(
 
 
 if __name__ == '__main__':
-    meaning_cloud_key = ''
     parser = argparse.ArgumentParser()
     parser.add_argument("-t", "--topic", help="Kafka topic output stream", required=True)
     parser.add_argument("-m", "--micro-batch", help="Micro batch in seconds. Default: 10 secs", type=int, default=10)
     parser.add_argument("-j", "--json-file", help="Output JSON file where to put the received tweets", default=None)
     args = parser.parse_args()
-    main(args.topic, meaning_cloud_key, micro_secs_batch=args.micro_batch, output_file=args.json_file)
+    main(args.topic, micro_secs_batch=args.micro_batch, output_file=args.json_file)
