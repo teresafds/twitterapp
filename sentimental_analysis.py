@@ -7,9 +7,14 @@ from pyspark.streaming import StreamingContext
 from pyspark.sql import Row, SparkSession
 from pyspark.streaming.kafka import KafkaUtils
 from pyspark.sql.types import MapType, StringType
+from pyspark.sql.functions import to_json, col, struct
+
+from kafka_script import KafkaSender
+
 
 ENABLED_LANGUAGES = ['en', 'es', 'fr', 'it', 'pt', 'ca']
 
+producer = None
 
 def getSparkSessionInstance(sparkConf):
     """
@@ -25,7 +30,7 @@ def getSparkSessionInstance(sparkConf):
 
 def get_sent_analysis(text, language):
     if language not in (ENABLED_LANGUAGES):
-        return json.dumps({})
+        return {}
     url_mc = 'http://api.meaningcloud.com/sentiment-2.1?'
     mc_key = ''
     payload = "key=%s&lang=%s&of=json&txt=%s" % (mc_key, language, text)
@@ -47,16 +52,21 @@ def main(
         checkpoint_file='/tmp/sentimental_analysis',
         zk_host='localhost',
         zk_port=2181,
+        output_kafka_host='localhost',
+        output_kafka_port=9092
     ):
+    global producer
     sc = SparkContext(appName="StreamingSentimentAnalysis")
     sc.setLogLevel("WARN")
     ssc = StreamingContext(sc, micro_secs_batch)
+    producer = KafkaSender(host=output_kafka_host, port=output_kafka_port)
     ssc.checkpoint(checkpoint_file)
     kafkaStream = KafkaUtils.createStream(ssc, "{zk_host}:{zk_port}".format(zk_host=zk_host, zk_port=zk_port), 'spark-streaming', {input_topic_name:1})
     tweets = kafkaStream.map(lambda v: json.loads(v[1]))
 
     # Convert RDDs of the words DStream to DataFrame and run SQL query
     def process(time, rdd):
+        global producer
         print("========= %s =========" % str(time))
         print(rdd.count())
         try:
@@ -88,10 +98,17 @@ def main(
                     LIMIT 10
                 """)
             tweetsCountsDataFrame.show()
+            tweetsCountsDataFrame \
+            .select(to_json(struct([col(c).alias(c) for c in tweetsCountsDataFrame.columns]))) \
+            .write \
+            .format("kafka") \
+            .option("kafka.bootstrap.servers", "{host}:{port}".format(host='localhost', port=9092)) \
+            .option("topic", 'twitterSentApp') \
+            .save()
             #tweetsDataFrame.printSchema()
         except Exception as e:
             print(e.message)
-            pass
+            #pass
     tweets.foreachRDD(process)
     ssc.start()
     ssc.awaitTermination()
