@@ -1,6 +1,6 @@
 # twitterapp
 This repository shows a Consumer Producer architecture using Kafka and Spark on Python language.
-In this case, the [Twitter Streaming API] is applied to extract most recent tweets, store them into a queue and consume them later.
+In this case, the Twitter Streaming API is applied to extract most recent tweets, store them into a queue and consume them later.
 
 It's composed by one producer:
 * **main.py**: extracts tweets in real-time and load them as JSON messages into a Kafka topic.
