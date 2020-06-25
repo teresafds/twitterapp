@@ -56,7 +56,7 @@ python main.py -t test -i 10
 ### Executing Consumers
 After that, execute one (or both) of the consumers:
 
-**Pyspark Counters Consumer**
+#### Pyspark Counters Consumer
 First create a config file called `counter.cfg`:
 ```
 [CounterApp]
@@ -74,7 +74,7 @@ Then submit a Spark job using pyspark_counter.py and counter.cfg file in the fol
 spark-submit --packages org.apache.spark:spark-streaming-kafka-0-8_2.11:2.4.4 pyspark_counter.py --config-file counter.cfg
 ```
 
-**Sentiment Analysis Consumer**
+#### Sentiment Analysis Consumer
 Submit a Spark job using sentimental_analysis.py and counter.cfg file in the following way:
 
 ```bash
