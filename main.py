@@ -4,23 +4,12 @@ import sys
 import argparse
 
 import tweepy
-from kafka import KafkaProducer
 
 from config import read_config
+from kafka_script import KafkaSender
 
 logger = logging.getLogger('twitterapp')
 logger.setLevel(logging.INFO)
-
-class KafkaSender(object):
-
-    def __init__(self, host='localhost', port=9092):
-        self.producer = KafkaProducer(bootstrap_servers=f"{host}:{port}")
-
-    def send_message(self, topic, message):
-        self.producer.send(topic, message.encode('utf-8'))
-
-    def close(self):
-        self.producer.close()
 
 
 class StreamListener(tweepy.StreamListener):
@@ -44,7 +33,7 @@ class StreamListener(tweepy.StreamListener):
                 min_msg[m] = f(min_msg[m])
         msg = json.dumps(min_msg)
         self.kafka_producer.send_message(self.kafka_topic, msg)
-        #logger.info(msg)
+        logger.info(msg)
 
 
     def on_error(self, status_code):
